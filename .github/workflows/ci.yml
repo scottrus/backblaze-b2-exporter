@@ -97,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo curl -sSL -o /usr/local/bin/hadolint \
-            https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
           sudo chmod +x /usr/local/bin/hadolint
 
       - name: Lint the Dockerfile, build the image, smoke test it
