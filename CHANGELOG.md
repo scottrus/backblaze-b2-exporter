@@ -15,6 +15,19 @@ this project intends to take.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-01
+
+### Changed
+
+- **`serviceAccount.automountServiceAccountToken` is now settable, and defaults to
+  `false`.** The exporter talks only to Backblaze and never calls the Kubernetes API, so
+  the projected token was a credential the workload could not use and an attacker landing
+  in the pod could. No chart value existed to turn it off, so every 0.1.0 deployment
+  mounts one.
+
+  Chart-only change. `__version__` and `appVersion` move with it because the release gate
+  asserts tag == package version == chart appVersion; the Python package is unchanged.
+
 ## [0.1.0] - 2026-08-01
 
 ### Added
