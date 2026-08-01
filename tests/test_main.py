@@ -258,3 +258,30 @@ def test_health_and_metrics_are_dispatched_and_unknown_paths_404():
         assert caught.value.code == 404
     finally:
         server.shutdown()
+
+
+def test_refresher_does_not_shadow_threading_internals():
+    """Guards against shadowing threading.Thread internals on the RUNNING interpreter.
+
+    `self._stop = threading.Event()` shadowed `threading.Thread._stop`, a PRIVATE method
+    CPython calls from `join()` via `_wait_for_tstate_lock()`, producing
+    "TypeError: 'Event' object is not callable".
+
+    READ THIS BEFORE TRUSTING IT: the check is interpreter-dependent and cannot be
+    otherwise. `Thread._stop` does not exist at all in 3.14 -- CPython removed it -- which
+    is both why the bug never fired there and why this assertion cannot see it there. On
+    3.14 this test passes with the bug reintroduced; on 3.11 it catches it.
+
+    That is the same asymmetry that let the bug through in the first place, so the real
+    guard is `test_stop_is_honoured_promptly_rather_than_after_a_full_interval` exercising
+    join() for real, plus the CI matrix pinning the floor version. This test is
+    defence-in-depth against the next private attribute, not a version-independent net.
+    """
+    import threading
+
+    refresher = Refresher(FakeClient(VERSIONS), B2Collector("bucket"), "bucket", ["etcd/"], 60)
+    # Subtract what Thread.__init__ sets on itself (_initialized, _target, _name...),
+    # leaving only attributes this subclass introduces.
+    own = set(vars(refresher)) - set(vars(threading.Thread()))
+    collisions = own & set(dir(threading.Thread))
+    assert collisions == set(), f"Refresher shadows threading.Thread attributes: {collisions}"

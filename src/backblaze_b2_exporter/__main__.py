@@ -204,7 +204,12 @@ class Refresher(threading.Thread):
         self._bucket = bucket
         self._prefixes = list(prefixes)
         self._interval = interval_seconds
-        self._stop = threading.Event()
+        # NOT `self._stop`. threading.Thread has a PRIVATE `_stop()` method that CPython
+        # calls from join() -> _wait_for_tstate_lock(); assigning an Event over it makes
+        # join() raise "TypeError: 'Event' object is not callable". The threading
+        # internals changed after 3.11, so this passes on 3.13/3.14 and fails only on the
+        # floor version -- which is exactly why the CI matrix pins 3.11.
+        self._stopping = threading.Event()
 
     def collect_once(self) -> bool:
         """One collection. Returns success; never raises.
@@ -236,12 +241,12 @@ class Refresher(threading.Thread):
     def run(self) -> None:
         while True:
             self.collect_once()
-            if self._stop.wait(self._interval):
+            if self._stopping.wait(self._interval):
                 log.info("refresh loop stopping")
                 return
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stopping.set()
 
 
 def make_app(registry):
