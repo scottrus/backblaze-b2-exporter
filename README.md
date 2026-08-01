@@ -318,11 +318,16 @@ growing.
 
 ## Status
 
-**Alpha, and not yet runnable end to end.** The collector core and its aggregation are
-implemented and tested; the CLI entry point, the background refresh loop, the HTTP server,
-the container image and the Helm chart are still to land. Configuration shown above
-describes the intended interface — including reading the metric prefix from an environment
-variable so a Kubernetes ConfigMap can set it — rather than something you can run today.
+**Alpha. Runnable, not yet released.** The collector, CLI, background refresh loop, HTTP
+server, container image and Helm chart are all implemented, and the full gate — lint,
+tests on 3.11/3.13/3.14, workflow lint, `helm lint` with template permutations and
+kubeconform, hadolint, image build and smoke test, and a CVE scan — passes on every push.
+
+**No image is published yet.** `ghcr.io/scottrus/backblaze-b2-exporter` appears when a
+`v*.*.*` tag is cut; until then, build locally with `make docker`.
+
+**It has still never collected from a real bucket.** See the disclosure above — that is the
+honest limit on everything else here.
 
 Metric names may change before 1.0.
 
