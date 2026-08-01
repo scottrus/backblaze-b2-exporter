@@ -1,0 +1,23 @@
+{{ include "b2exp.fullname" . }} is serving on port {{ .Values.service.port }}.
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "b2exp.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl localhost:{{ .Values.service.port }}/metrics
+
+First collection runs immediately, then every {{ .Values.refreshInterval }}s.
+
+Check it worked -- before the first success there are deliberately NO usage
+gauges, only these:
+
+  {{ .Values.metricPrefix }}_collection_success             1 means the last attempt worked
+  {{ .Values.metricPrefix }}_last_collection_timestamp_seconds
+
+{{- if not .Values.prefixes }}
+
+NOTE: no prefixes configured, so every object lands in the `other` series.
+sum({{ .Values.metricPrefix }}_bucket_billed_bytes) is still the exact bucket total.
+{{- end }}
+{{- if not (gt (int .Values.quotaBytes) 0) }}
+
+NOTE: quotaBytes is 0, so {{ .Values.metricPrefix }}_bucket_quota_bytes is not published.
+Set it to alert on a ratio rather than a hardcoded byte count.
+{{- end }}

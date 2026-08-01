@@ -1,0 +1,93 @@
+# -- Bucket to measure. Required.
+bucket: ""
+
+b2:
+  # -- Application key ID. Required unless existingSecret is set.
+  applicationKeyId: ""
+  # -- Application key. Required unless existingSecret is set.
+  # Needs only listBuckets and listFiles -- NOT readFiles, and never a
+  # write-capable key. See the README for how to mint one.
+  applicationKey: ""
+  # -- Use a pre-existing Secret instead of rendering one from the two values
+  # above. It must contain B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY.
+  existingSecret: ""
+
+# -- Key prefixes to attribute usage to, e.g. ["etcd/", "postgres/"].
+# Anything unmatched lands in the `other` series. CONFIGURED, never discovered:
+# deriving these from object keys would make label cardinality a function of
+# what somebody uploads.
+prefixes: []
+
+# -- Metric namespace. Configurable only to avoid collisions between instances.
+metricPrefix: b2
+
+# -- Seconds between collections. This -- and only this -- sets the B2
+# transaction rate; scrapes never reach Backblaze.
+refreshInterval: 900
+
+# -- Capacity ceiling published as b2_bucket_quota_bytes so rules can alert on a
+# RATIO rather than a hardcoded byte count. 0 disables the metric.
+quotaBytes: 0
+
+logLevel: INFO
+
+image:
+  repository: ghcr.io/scottrus/backblaze-b2-exporter
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# -- Deliberately 1, and not for the usual reasons. Extra replicas multiply B2
+# transactions and emit duplicate series for no availability gain: the exporter
+# being briefly down loses nothing, because each collection re-reads absolute
+# values rather than deltas.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 9944
+  annotations: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+serviceMonitor:
+  enabled: false
+  interval: 5m
+  scrapeTimeout: 30s
+  labels: {}
+
+vmServiceScrape:
+  enabled: false
+  interval: 5m
+  scrapeTimeout: 30s
+  labels: {}
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    # A limit is the backstop for the O(prefixes) memory claim: a regression that
+    # started materialising the listing would OOMKill loudly instead of growing
+    # quietly for months.
+    memory: 128Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

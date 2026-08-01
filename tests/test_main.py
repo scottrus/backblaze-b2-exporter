@@ -224,3 +224,37 @@ def test_exposition_renders_as_valid_prometheus_text():
     assert "b2_collection_success 1.0" in text
     # HELP text is how an operator learns what "billed" means without the README.
     assert "# HELP b2_bucket_billed_bytes" in text
+
+
+def test_health_and_metrics_are_dispatched_and_unknown_paths_404():
+    """prometheus_client's own app answers EVERY path with 200 (verified on 0.26.0),
+    so a /health probe against it would pass on a typo. Dispatch explicitly instead."""
+    import urllib.error
+    import urllib.request
+
+    from prometheus_client import CollectorRegistry
+
+    from backblaze_b2_exporter.__main__ import serve
+
+    registry = CollectorRegistry()
+    collector = B2Collector("example-backups", namespace="b2")
+    registry.register(collector)
+    Refresher(FakeClient(VERSIONS), collector, "example-backups", ["etcd/"], 60).collect_once()
+
+    server = serve(registry, "127.0.0.1", 0)
+    port = server.server_address[1]
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=5) as resp:
+            assert resp.status == 200
+            assert resp.read() == b"ok\n"
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=5) as resp:
+            assert resp.status == 200
+            assert b"b2_bucket_billed_bytes" in resp.read()
+
+        # The assertion that makes /health mean something: a typo must not pass.
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/hplth", timeout=5)
+        assert caught.value.code == 404
+    finally:
+        server.shutdown()

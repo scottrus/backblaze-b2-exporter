@@ -1,0 +1,38 @@
+version: 2
+
+updates:
+  # Python runtime and dev dependencies.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, python]
+    groups:
+      # Lint and test tooling churns often and is low risk; one PR for the lot.
+      dev-tooling:
+        patterns: ["pytest*", "ruff"]
+        update-types: [minor, patch]
+
+  # Base images. The Chainguard free tier publishes only `latest`, so the
+  # Dockerfile pins by digest -- this is what keeps those digests current, and is
+  # the only thing standing between us and a silently stale base image.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, ci]
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]

@@ -20,8 +20,10 @@ import sys
 import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from socketserver import ThreadingMixIn
+from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from prometheus_client import REGISTRY, start_http_server
+from prometheus_client import REGISTRY, make_wsgi_app
 
 from . import __version__
 from .client import B2Client
@@ -242,6 +244,58 @@ class Refresher(threading.Thread):
         self._stop.set()
 
 
+def make_app(registry):
+    """WSGI app dispatching /metrics and /health, and 404 for everything else.
+
+    WHY NOT `start_http_server` ALONE. prometheus_client's WSGI app answers EVERY path
+    with 200 and the metrics body -- `/health`, `/`, and `/nonsense` alike (verified
+    against 0.26.0). A container HEALTHCHECK or a Kubernetes probe pointed at `/health`
+    would therefore pass even if the path were a typo, which makes it a "the socket is
+    open" check wearing a health check's clothes.
+
+    Dispatching explicitly means a wrong path fails loudly, and `/health` means something
+    narrow and honest: the HTTP server is up. It deliberately does NOT report collection
+    state -- that is what `b2_collection_success` is for, and gating readiness on a
+    successful collection would stop the scrape that carries the bad news.
+    """
+    metrics_app = make_wsgi_app(registry)
+
+    def app(environ, start_response):
+        path = environ.get("PATH_INFO", "/")
+        if path == "/metrics":
+            return metrics_app(environ, start_response)
+        if path == "/health":
+            start_response("200 OK", [("Content-Type", "text/plain; charset=utf-8")])
+            return [b"ok\n"]
+        start_response("404 Not Found", [("Content-Type", "text/plain; charset=utf-8")])
+        return [b"not found\n"]
+
+    return app
+
+
+class _ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
+    """A scrape must never queue behind a slow one.
+
+    Defined here from public stdlib pieces rather than importing prometheus_client's
+    private `ThreadingWSGIServer`, which would break silently on a library refactor.
+    """
+
+    daemon_threads = True
+
+
+class _QuietHandler(WSGIRequestHandler):
+    """Suppress per-request access logging: a line per scrape is pure noise."""
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+def serve(registry, address: str, port: int) -> WSGIServer:
+    server = make_server(address, port, make_app(registry), _ThreadingWSGIServer, _QuietHandler)
+    threading.Thread(target=server.serve_forever, name="b2-http", daemon=True).start()
+    return server
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = resolve_config(sys.argv[1:] if argv is None else argv, os.environ)
@@ -266,9 +320,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     client = B2Client(config.key_id, config.application_key)
     refresher = Refresher(client, collector, config.bucket, config.prefixes, config.refresh_seconds)
 
-    start_http_server(config.port, config.listen_address, registry=REGISTRY)
+    server = serve(REGISTRY, config.listen_address, config.port)
     log.info(
-        "serving /metrics on %s:%d, refreshing bucket %s every %ds, metric prefix %r",
+        "serving /metrics and /health on %s:%d, refreshing bucket %s every %ds, metric prefix %r",
         config.listen_address,
         config.port,
         config.bucket,
@@ -287,6 +341,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, _handle)
     signal.signal(signal.SIGINT, _handle)
     stopping.wait()
+    server.shutdown()
     refresher.join(timeout=10)
     return 0
 

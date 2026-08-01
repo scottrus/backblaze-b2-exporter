@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "b2exp.fullname" . }}
+  labels: {{- include "b2exp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "b2exp.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels: {{- include "b2exp.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{/* Without this a ConfigMap edit leaves the running process on the old
+             values, because env is read once at container start. */}}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "b2exp.serviceAccountName" . }}
+      {{/*
+        MANDATORY, NOT HYGIENE. Kubernetes service links inject <SVCNAME>_PORT for
+        every Service in the namespace, uppercased with dashes turned into
+        underscores. A Service named `b2-exporter` therefore injects
+        B2_EXPORTER_PORT=tcp://10.x.x.x:9944 -- which collides exactly with this
+        exporter's own B2_EXPORTER_PORT setting and makes it fail to parse a port.
+        The collision is silent in the manifest and only shows up as a CrashLoop.
+      */}}
+      enableServiceLinks: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: exporter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "b2exp.fullname" . }}
+            - secretRef:
+                name: {{ include "b2exp.secretName" . }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          {{/*
+            Both probes hit /health, which is a REAL route that 404s unknown paths.
+            Neither asserts collection success on purpose: a bad key or a B2 outage
+            must surface as b2_collection_success 0 on a scrape someone can alert
+            on, not as a restart loop that destroys the evidence and stops the
+            scrape carrying the bad news.
+          */}}
+          livenessProbe:
+            httpGet: { path: /health, port: http-metrics }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /health, port: http-metrics }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

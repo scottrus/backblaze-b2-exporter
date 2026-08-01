@@ -1,0 +1,24 @@
+{{/*
+Non-secret configuration lives here rather than as inline env on the Deployment,
+so it can be read, diffed and edited as one object -- and so the metric prefix in
+particular is adjustable without touching the workload spec.
+
+Changing it still needs a pod restart, because env is fixed at container start.
+The checksum annotation on the Deployment is what makes `helm upgrade` do that
+for you instead of leaving a ConfigMap that disagrees with the running process.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "b2exp.fullname" . }}
+  labels: {{- include "b2exp.labels" . | nindent 4 }}
+data:
+  B2_EXPORTER_BUCKET: {{ required "bucket is required" .Values.bucket | quote }}
+  B2_EXPORTER_PREFIXES: {{ join "," .Values.prefixes | quote }}
+  B2_EXPORTER_METRIC_PREFIX: {{ .Values.metricPrefix | quote }}
+  B2_EXPORTER_REFRESH_INTERVAL: {{ .Values.refreshInterval | quote }}
+  B2_EXPORTER_LOG_LEVEL: {{ .Values.logLevel | quote }}
+  B2_EXPORTER_PORT: {{ .Values.service.port | quote }}
+  {{- if gt (int .Values.quotaBytes) 0 }}
+  B2_EXPORTER_QUOTA_BYTES: {{ .Values.quotaBytes | quote }}
+  {{- end }}
