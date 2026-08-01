@@ -15,6 +15,8 @@ this project intends to take.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-01
+
 ### Added
 
 - Initial implementation. Reports Backblaze B2 bucket usage **as billed** — counting
