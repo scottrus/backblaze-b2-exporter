@@ -60,6 +60,55 @@ This exporter reports both, and lets you see the difference:
 Their difference is the blind spot, quantified continuously rather than asserted in a
 README.
 
+---
+
+## ⚠️ Read this before you deploy it
+
+### This project was vibe-coded
+
+It was written largely by an AI coding assistant, with a human reviewing and directing,
+against a real Backblaze B2 bucket holding a real backup pipeline. That is disclosed here
+so you can weigh it honestly rather than discovering it from the commit history.
+
+**What is actually grounded:**
+
+- The billing premise is quoted from Backblaze's own documentation, not assumed — see above.
+  An earlier draft of this README cited an SDK issue that does not support the claim, and
+  that was caught in review.
+- The aggregation logic is tested against a **real captured listing**, including a hidden
+  file with two superseded versions — the exact case a `ListObjectsV2` exporter cannot see.
+- The container builds reproducibly, runs as uid 65532, and scans clean.
+
+**What has not been exercised, stated plainly:**
+
+- **It has never made a real B2 API call.** `client.py` — the b2sdk integration — has **no
+  test coverage**. Everything proven above is proven against a fixture. The first real
+  collection will be the first time that code path runs.
+- **Version ordering across pagination boundaries is unverified.** Current-vs-superseded is
+  decided by file-name transitions in a single pass, which relies on B2 returning versions
+  grouped by name, newest first. That held in the one capture used here, over a single page.
+  If it does not hold across page boundaries, `ListingOrderError` should fire rather than
+  produce wrong numbers — but that guard is itself untested against real pagination.
+- **One bucket shape.** The workloads behind the test data write uniquely-named objects, so
+  non-current versions are rare and the dominant effect is lifecycle-hidden files. Buckets
+  with heavy version churn, many unfinished large files, or hundreds of prefixes are handled
+  generically and are far less exercised.
+- The 50,000-object memory test uses a synthetic in-memory generator, not real paginated
+  API responses.
+
+Read the source before trusting it — it is deliberately short and heavily commented. Bug
+reports from people running different bucket shapes are genuinely wanted.
+
+### Do not give it a write-capable key
+
+This is a network service that only ever needs to **list**. `listBuckets,listFiles` is
+sufficient; it never downloads object content, so even `readFiles` is unnecessary. And do
+not mint the key in the Backblaze web UI — its "Write Only" preset silently grants
+`deleteFiles` **and** `bypassGovernance`, which is precisely backwards for a bucket whose
+whole purpose is being hard to delete from.
+
+---
+
 ## Metrics
 
 | Metric | Labels | Notes |

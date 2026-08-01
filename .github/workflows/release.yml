@@ -1,0 +1,197 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Default to read-only and grant per job. A blanket `contents: write` here would
+# hand the token write access to jobs that only build and scan.
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Gate: the tagged commit must be one that already passed full CI on main.
+  #
+  # Re-running lint and test here would be weaker than it looks -- it duplicates
+  # one of the four CI jobs while silently skipping helm, docker, actionlint and
+  # the image scan, so a tag could publish a chart that fails `helm lint`. Rather
+  # than copy every job into this workflow (and have the two drift), assert the
+  # invariant directly: this exact commit is on main, and CI succeeded on it.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read     # to query CI runs for this commit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # merge-base needs real history, not a shallow clone
+
+      - name: Tagged commit must be on main
+        run: |
+          set -euo pipefail
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_SHA is not an ancestor of origin/main."
+            echo "Releases are cut from main so that branch protection -- which"
+            echo "requires the CI checks -- is what stands behind the tag."
+            exit 1
+          fi
+          echo "$GITHUB_SHA is on main"
+
+      - name: CI must have succeeded on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Ask for successful CI runs against this exact SHA. Deriving the answer
+          # this way avoids hardcoding the required check names, which would drift
+          # the moment branch protection changed.
+          count=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=success" \
+            --jq '.total_count')
+          if [ "$count" -lt 1 ]; then
+            echo "::error::No successful CI run found for ${GITHUB_SHA}."
+            echo "If CI is still running on this commit, wait for it and re-tag."
+            exit 1
+          fi
+          echo "found $count successful CI run(s) for this commit"
+
+  image:
+    name: Image
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # push the image to GHCR
+      id-token: write        # OIDC token the attestation is signed against
+      attestations: write    # persist the attestation to the repo
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the tag matches the packaged version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/backblaze_b2_exporter/__init__.py)"
+          chart="$(sed -n 's/^appVersion: "\(.*\)"/\1/p' charts/backblaze-b2-exporter/Chart.yaml)"
+          echo "tag=$tag package=$pkg chart_appVersion=$chart"
+          # A tag that disagrees with the version baked into the artifact is the
+          # kind of mismatch nobody notices until they are debugging in anger.
+          [ "$tag" = "$pkg" ]   || { echo "tag != __version__"; exit 1; }
+          [ "$tag" = "$chart" ] || { echo "tag != chart appVersion"; exit 1; }
+
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  chart:
+    name: Chart
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # push the chart to GHCR as an OCI artifact
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.2.3
+
+      - name: Package and push to GHCR as an OCI artifact
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ${{ env.REGISTRY }} \
+                --username ${{ github.actor }} --password-stdin
+          helm package charts/backblaze-b2-exporter --destination /tmp/chart
+          # Repository owner must be lowercase for an OCI reference.
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          helm push /tmp/chart/backblaze-b2-exporter-*.tgz \
+            "oci://${{ env.REGISTRY }}/${owner}/charts"
+
+  release:
+    name: GitHub release
+    needs: [image, chart]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the GitHub release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Create the release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          generate_release_notes: true
+          body: |
+            ## Container image
+
+            ```
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+
+            Digest: `${{ needs.image.outputs.digest }}`
+
+            ## Helm chart
+
+            ```bash
+            helm install b2-exporter \
+              oci://ghcr.io/${{ github.repository_owner }}/charts/backblaze-b2-exporter \
+              --version ${{ github.ref_name }} \
+              --namespace monitoring \
+              --set bucket=my-bucket \
+              --set b2.existingSecret=b2-exporter \
+              --set 'prefixes={etcd/,postgres/}' \
+              --set quotaBytes=10737418240
+            ```
+
+            > Give the exporter a **read-only** application key with only
+            > `listBuckets,listFiles` — it never downloads object content, so
+            > `readFiles` is unnecessary. Do not create the key in the Backblaze
+            > web UI: its "Write Only" preset silently grants `deleteFiles` and
+            > `bypassGovernance`.
