@@ -16,9 +16,17 @@ data:
   B2_EXPORTER_BUCKET: {{ required "bucket is required" .Values.bucket | quote }}
   B2_EXPORTER_PREFIXES: {{ join "," .Values.prefixes | quote }}
   B2_EXPORTER_METRIC_PREFIX: {{ .Values.metricPrefix | quote }}
-  B2_EXPORTER_REFRESH_INTERVAL: {{ .Values.refreshInterval | quote }}
+  {{/*
+    EVERY NUMERIC VALUE GOES THROUGH `int64` BEFORE `quote`, and it is load-bearing.
+    Helm parses a VALUES FILE as YAML -> JSON, which yields float64; `--set` uses a
+    different parser that yields int64. So `quotaBytes: 10000000000` renders as
+    "1e+10" from a file and "10000000000" from --set. The exporter then refuses to
+    start with `quota bytes must be an integer, got '1e+10'`.
+    Found on first deploy: every helm test here used --set and took the other path.
+  */}}
+  B2_EXPORTER_REFRESH_INTERVAL: {{ .Values.refreshInterval | int64 | quote }}
   B2_EXPORTER_LOG_LEVEL: {{ .Values.logLevel | quote }}
-  B2_EXPORTER_PORT: {{ .Values.service.port | quote }}
-  {{- if gt (int .Values.quotaBytes) 0 }}
-  B2_EXPORTER_QUOTA_BYTES: {{ .Values.quotaBytes | quote }}
+  B2_EXPORTER_PORT: {{ .Values.service.port | int64 | quote }}
+  {{- if gt (int64 .Values.quotaBytes) 0 }}
+  B2_EXPORTER_QUOTA_BYTES: {{ .Values.quotaBytes | int64 | quote }}
   {{- end }}
