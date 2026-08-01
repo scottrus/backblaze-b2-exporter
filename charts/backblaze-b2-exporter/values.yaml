@@ -77,6 +77,28 @@ resources:
     # started materialising the listing would OOMKill loudly instead of growing
     # quietly for months.
     memory: 128Mi
+    # -- The usual argument against CPU limits is CFS throttling adding latency to
+    # something a user waits on. Nothing waits on this: it sleeps for the whole
+    # refresh interval, then does one short burst (0.89s over 233 versions,
+    # measured). Throttling that burst just makes it slightly longer, which is
+    # invisible at a 15-minute cadence.
+    #
+    # What the limit actually buys is bounding a runaway. This runs in a shared
+    # namespace, and an infinite loop with no limit pegs a core for the neighbours.
+    cpu: 500m
+
+# -- Writable scratch, because readOnlyRootFilesystem is true.
+#
+# Nothing writes to disk today -- client.py uses InMemoryAccountInfo specifically to
+# avoid b2sdk's on-disk account cache -- but Python, a dependency, or a future change
+# can want a temp path, and the failure mode is a CrashLoop rather than a warning.
+# 16Mi of tmpfs removes the entire class for a cost that rounds to nothing.
+#
+# medium: Memory counts against the container's memory limit, which is why the limit
+# above stays comfortably clear of it.
+tmpDir:
+  enabled: true
+  sizeLimit: 16Mi
 
 podSecurityContext:
   runAsNonRoot: true

@@ -2,8 +2,8 @@ apiVersion: v2
 name: backblaze-b2-exporter
 description: Prometheus exporter for Backblaze B2 bucket usage as billed, including non-current versions and hidden files
 type: application
-version: 0.1.2
-appVersion: "0.1.2"
+version: 0.1.3
+appVersion: "0.1.3"
 home: https://github.com/scottrus/backblaze-b2-exporter
 sources:
   - https://github.com/scottrus/backblaze-b2-exporter

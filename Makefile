@@ -208,6 +208,13 @@ docker-smoke:
 		docker run --rm --entrypoint python $(IMAGE) -c \
 			'import backblaze_b2_exporter as m; print(m.__version__)' >/dev/null; \
 		echo "    package imports inside the image"; \
+		docker run --rm --read-only --tmpfs /tmp $(IMAGE) --version >/dev/null; \
+		echo "    starts with a READ-ONLY rootfs (+ tmpfs /tmp), as the chart deploys it"; \
+		if docker run --rm --read-only $(IMAGE) --version >/dev/null 2>&1; then \
+			echo "    read-only WITHOUT /tmp also works -- nothing needs scratch today"; \
+		else \
+			echo "    NOTE: read-only without /tmp fails, so the chart's tmpfs is load-bearing"; \
+		fi; \
 		out="$$(docker run --rm $(IMAGE) 2>&1 || true)"; \
 		case "$$out" in \
 			*"bucket is required"*) echo "    refuses to start unconfigured, with the expected message";; \
