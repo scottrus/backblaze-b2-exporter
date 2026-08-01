@@ -15,6 +15,27 @@ this project intends to take.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-01
+
+### Fixed
+
+- **A large `quotaBytes` set from a values file rendered in scientific notation, and the
+  exporter refused to start.** `quotaBytes: 10000000000` became
+  `B2_EXPORTER_QUOTA_BYTES: "1e+10"`, and the container exited with
+  `quota bytes must be an integer, got '1e+10'`.
+
+  **Helm parses a values file as YAML → JSON, which yields `float64`; `--set` uses a
+  different parser that yields `int64`.** So the same number renders correctly via `--set`
+  and wrongly from a file. Every helm test in this repo used `--set` and therefore took
+  the path that works — the bug was found on first real deploy.
+
+  All numeric ConfigMap values now go through `int64` before `quote`. `refreshInterval` and
+  `service.port` were not large enough to trigger it but are fixed too, since the next
+  person to raise one should not rediscover this.
+
+  The regression test renders from an actual values file and asserts the literal digits, so
+  the failing path is now the tested one.
+
 ## [0.1.1] - 2026-08-01
 
 ### Changed
