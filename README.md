@@ -77,24 +77,33 @@ so you can weigh it honestly rather than discovering it from the commit history.
   that was caught in review.
 - The aggregation logic is tested against a **real captured listing**, including a hidden
   file with two superseded versions — the exact case a `ListObjectsV2` exporter cannot see.
-- The container builds reproducibly, runs as uid 65532, and scans clean.
+- **It has run against a live bucket** (2026-08-01, Kubernetes, chart 0.1.2): first
+  collection in 0.89s over 233 versions across 4 prefixes, scraped successfully.
+
+  It reported **38 billed bytes against 0 current bytes** for one prefix — a hidden file
+  with two superseded uploads, invisible to `b2 ls`, still charged for. That figure matched
+  a hand calculation from the raw `b2 ls --versions` output exactly, which is the closest
+  thing to end-to-end proof the premise has.
+- The container builds reproducibly, runs as uid 65532 with a **read-only root filesystem**,
+  and scans clean.
 
 **What has not been exercised, stated plainly:**
 
-- **It has never made a real B2 API call.** `client.py` — the b2sdk integration — has **no
-  test coverage**. Everything proven above is proven against a fixture. The first real
-  collection will be the first time that code path runs.
-- **Version ordering across pagination boundaries is unverified.** Current-vs-superseded is
-  decided by file-name transitions in a single pass, which relies on B2 returning versions
-  grouped by name, newest first. That held in the one capture used here, over a single page.
-  If it does not hold across page boundaries, `ListingOrderError` should fire rather than
-  produce wrong numbers — but that guard is itself untested against real pagination.
-- **One bucket shape.** The workloads behind the test data write uniquely-named objects, so
-  non-current versions are rare and the dominant effect is lifecycle-hidden files. Buckets
-  with heavy version churn, many unfinished large files, or hundreds of prefixes are handled
-  generically and are far less exercised.
-- The 50,000-object memory test uses a synthetic in-memory generator, not real paginated
-  API responses.
+- **`client.py` still has no automated test coverage.** It has now run for real, but nothing
+  in CI exercises the b2sdk path — a regression there would be caught by a deployment, not
+  by a test. These are different claims and only the first has changed.
+- **Version ordering across pagination boundaries is still unverified.** Current-vs-superseded
+  is decided by file-name transitions in a single pass, relying on B2 returning versions
+  grouped by name, newest first. **The live bucket holds 233 versions — one page.** So the
+  successful run above says nothing about pagination. `ListingOrderError` should fire rather
+  than produce wrong numbers if the guarantee does not hold, but that guard remains untested
+  against a real multi-page listing.
+- **One bucket shape.** The workloads behind it write uniquely-named objects, so non-current
+  versions are rare and the dominant effect is lifecycle-hidden files. Buckets with heavy
+  version churn, many unfinished large files, or hundreds of prefixes are handled generically
+  and are far less exercised.
+- The 50,000-object memory test uses a synthetic in-memory generator, not real paginated API
+  responses.
 
 Read the source before trusting it — it is deliberately short and heavily commented. Bug
 reports from people running different bucket shapes are genuinely wanted.
@@ -318,16 +327,18 @@ growing.
 
 ## Status
 
-**Alpha. Runnable, not yet released.** The collector, CLI, background refresh loop, HTTP
+**Alpha, released, and running in one homelab.** The collector, CLI, background refresh loop, HTTP
 server, container image and Helm chart are all implemented, and the full gate — lint,
 tests on 3.11/3.13/3.14, workflow lint, `helm lint` with template permutations and
 kubeconform, hadolint, image build and smoke test, and a CVE scan — passes on every push.
 
-**No image is published yet.** `ghcr.io/scottrus/backblaze-b2-exporter` appears when a
-`v*.*.*` tag is cut; until then, build locally with `make docker`.
+```bash
+helm install b2-exporter oci://ghcr.io/scottrus/charts/backblaze-b2-exporter --version 0.1.2 \
+  -n monitoring --set bucket=my-bucket --set b2.existingSecret=b2-exporter
+```
 
-**It has still never collected from a real bucket.** See the disclosure above — that is the
-honest limit on everything else here.
+**Chart 0.1.2 or later.** 0.1.1 renders a large `quotaBytes` from a values file in
+scientific notation and refuses to start — see the changelog.
 
 Metric names may change before 1.0.
 
