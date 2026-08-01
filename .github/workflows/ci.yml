@@ -100,9 +100,24 @@ jobs:
             https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
           sudo chmod +x /usr/local/bin/hadolint
 
+      # DELIBERATELY UNCACHED. Do not add a gha layer cache here.
+      #
+      # It was measured and reverted in truenas-scale-exporter, which has the same
+      # build shape: the cache imported successfully and still DOUBLED the job.
+      # The reason is structural rather than a tuning problem -- this build is
+      # almost entirely a Chainguard base-image pull, and routing those layers
+      # through GitHub's cache is slower than pulling them from the registry.
+      #
+      # The only genuinely cacheable step is the pip install, which resolves eight
+      # small wheels in ~1.7s locally. Caching it cannot recover what the layer
+      # round-trip costs.
       - name: Lint the Dockerfile, build the image, smoke test it
         run: make docker
 
+      # Do not set `cache-db: true` on this step. Also measured and reverted
+      # upstream: it moves grype's vulnerability-database download from scan time
+      # to install time rather than removing it, so the job is no faster and the
+      # cache is one more thing that can go stale.
       - name: Install grype
         id: grype
         uses: anchore/scan-action/download-grype@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
