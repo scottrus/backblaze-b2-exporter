@@ -200,14 +200,23 @@ class B2Collector(Collector):
     def _name(self, suffix: str) -> str:
         """Prefix a metric name with the configured namespace.
 
-        Exists so two instances -- separate B2 accounts, or this alongside a fork --
-        can coexist in one TSDB without colliding. It does NOT provide s3_exporter
-        compatibility: see the migration table in README.md. Renaming a metric does
-        not change what it measures, and `s3_objects_size_sum_bytes` means current
-        objects while this exporter's headline number is billed bytes. Serving one
-        under the other's name would be the failure this project exists to fix.
+        EVERY metric goes through here -- usage gauges and collector meta alike. A
+        prefix that covered only some of them would be worse than none, because the
+        uncovered ones are exactly what collides.
+
+        Exists so two instances -- separate B2 accounts, two buckets on separate
+        deployments, or this alongside a fork -- can coexist in one TSDB. It does NOT
+        provide s3_exporter compatibility: see the migration table in README.md.
+        Renaming a metric does not change what it measures, and
+        `s3_objects_size_sum_bytes` means current objects while this exporter's
+        headline number is billed bytes. Serving one under the other's name would be
+        the failure this project exists to fix.
+
+        An empty namespace yields unprefixed names rather than a leading underscore,
+        so setting the value to "" in a ConfigMap degrades to something legible
+        instead of `_bucket_billed_bytes`.
         """
-        return f"{self._namespace}_{suffix}"
+        return f"{self._namespace}_{suffix}" if self._namespace else suffix
 
     def update(self, snapshot: UsageSnapshot) -> None:
         self._snapshot = snapshot

@@ -90,14 +90,24 @@ silent.
 
 If you are migrating, rewrite the two exact matches and treat the rest as new.
 
-### `--metric-prefix`
+### Metric prefix
 
 The default namespace is `b2`. It is configurable **solely to avoid collisions** — two
-accounts, two buckets scraped by separate instances, or this running alongside a fork:
+accounts, two buckets scraped by separate deployments, or this running alongside a fork.
 
-```bash
-backblaze-b2-exporter --metric-prefix b2_archive    # b2_archive_bucket_billed_bytes
+**Every metric goes through it**, usage gauges and collector meta alike; a prefix covering
+only some of them would be worse than none, because the uncovered ones are exactly what
+collides. That is enforced by an exhaustive test, not a spot check.
+
 ```
+b2                b2_bucket_billed_bytes,   b2_collection_success
+acme_offsite      acme_offsite_bucket_billed_bytes,   acme_offsite_collection_success
+"" (empty)        bucket_billed_bytes,      collection_success
+```
+
+An empty value degrades to unprefixed names rather than a leading underscore, and a trailing
+underscore (`acme_`) is tolerated rather than doubled — both are what a ConfigMap key
+eventually gets set to by someone in a hurry.
 
 Renaming does not change meaning. Setting it to `s3` yields `s3_bucket_billed_bytes`, never
 `s3_objects_size_sum_bytes`, and there is a test asserting exactly that.
@@ -223,7 +233,13 @@ growing.
 
 ## Status
 
-Alpha. Metric names may change before 1.0.
+**Alpha, and not yet runnable end to end.** The collector core and its aggregation are
+implemented and tested; the CLI entry point, the background refresh loop, the HTTP server,
+the container image and the Helm chart are still to land. Configuration shown above
+describes the intended interface — including reading the metric prefix from an environment
+variable so a Kubernetes ConfigMap can set it — rather than something you can run today.
+
+Metric names may change before 1.0.
 
 ## License
 

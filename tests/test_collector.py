@@ -223,3 +223,39 @@ def test_failure_after_success_retains_last_known_values():
     families = {f.name: f for f in collector.collect()}
     assert families["b2_collection_success"].samples[0].value == 0
     assert "b2_bucket_billed_bytes" in families  # values retained, not dropped
+
+
+def test_every_metric_family_respects_the_prefix():
+    """Exhaustive, not a spot check -- a half-applied prefix is worse than none.
+
+    The metrics someone forgets to route through the namespace are precisely the ones
+    that then collide, and a spot check on two names would not catch it.
+    """
+    from backblaze_b2_exporter.collector import B2Collector, collect_snapshot
+
+    collector = B2Collector("example-backups", quota_bytes=10_737_418_240, namespace="acme")
+    collector.update(collect_snapshot("example-backups", load_fixture(), [TALOS]))
+    names = _names(collector)
+    assert names, "no metrics emitted"
+    unprefixed = {n for n in names if not n.startswith("acme_")}
+    assert unprefixed == set(), f"metric families bypassing the namespace: {unprefixed}"
+
+
+def test_empty_prefix_degrades_to_unprefixed_not_leading_underscore():
+    """A ConfigMap key set to "" should give legible names, not `_bucket_billed_bytes`."""
+    from backblaze_b2_exporter.collector import B2Collector, collect_snapshot
+
+    collector = B2Collector("example-backups", namespace="")
+    collector.update(collect_snapshot("example-backups", load_fixture(), [TALOS]))
+    names = _names(collector)
+    assert "bucket_billed_bytes" in names
+    assert not any(n.startswith("_") for n in names)
+
+
+def test_trailing_underscore_in_prefix_is_tolerated():
+    """`B2_METRIC_PREFIX=acme_` from a ConfigMap must not yield `acme__bucket_...`."""
+    from backblaze_b2_exporter.collector import B2Collector, collect_snapshot
+
+    collector = B2Collector("example-backups", namespace="acme_")
+    collector.update(collect_snapshot("example-backups", load_fixture(), [TALOS]))
+    assert "acme_bucket_billed_bytes" in _names(collector)
