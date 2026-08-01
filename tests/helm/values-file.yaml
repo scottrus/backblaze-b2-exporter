@@ -1,0 +1,31 @@
+# Rendered by `make helm-template` as the values-FILE permutation.
+#
+# THIS FILE EXISTS BECAUSE --set AND -f TAKE DIFFERENT PARSERS. Helm reads a values
+# file as YAML -> JSON, which yields float64 for numbers; `--set` yields int64. A
+# large integer therefore renders as "1e+10" one way and "10000000000" the other,
+# and chart 0.1.1 shipped broken on exactly that difference -- every test used
+# --set, so CI was green while the production path was the untested one.
+#
+# Real deployments use `-f`. Keep this file shaped like one, and keep the numbers
+# large enough to expose float formatting.
+bucket: example-backups
+
+b2:
+  applicationKeyId: keyid
+  applicationKey: secret
+
+# List-valued, so the `join` in configmap.yaml is exercised from a file too.
+prefixes:
+  - etcd/
+  - postgres/
+
+metricPrefix: b2
+refreshInterval: 900
+
+# 10 GB in decimal bytes -- the value that broke 0.1.1. Do not shrink it: a smaller
+# number formats identically as float64 and int64, which is precisely how this
+# escaped notice.
+quotaBytes: 10000000000
+
+service:
+  port: 9944

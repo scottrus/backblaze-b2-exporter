@@ -134,13 +134,25 @@ helm-template:
 			|| { echo "FAIL: enableServiceLinks must default to false -- a Service named b2-exporter would otherwise inject B2_EXPORTER_PORT and collide with the exporter's own port setting"; exit 1; }; \
 		grep -q 'checksum/config' /tmp/b2e-inline.yaml \
 			|| { echo "FAIL: no config checksum -- a ConfigMap edit would not restart the pod"; exit 1; }; \
-		printf 'bucket: b\nb2:\n  applicationKeyId: k\n  applicationKey: s\nquotaBytes: 10000000000\n' \
-			> /tmp/b2e-file-values.yaml; \
-		helm template t $(CHART) -f /tmp/b2e-file-values.yaml > /tmp/b2e-from-file.yaml; \
+		echo "==> values-FILE permutation (the path real deployments take)"; \
+		helm template t $(CHART) -f tests/helm/values-file.yaml > /tmp/b2e-from-file.yaml; \
 		grep -q 'B2_EXPORTER_QUOTA_BYTES: "10000000000"' /tmp/b2e-from-file.yaml \
 			|| { echo "FAIL: a large integer from a VALUES FILE rendered wrong. Helm parses file"; \
 			     echo "      values as float64 and --set as int64, so --set cannot catch this."; \
 			     grep QUOTA_BYTES /tmp/b2e-from-file.yaml; exit 1; }; \
+		grep -q 'B2_EXPORTER_REFRESH_INTERVAL: "900"' /tmp/b2e-from-file.yaml \
+			|| { echo "FAIL: refreshInterval wrong from a values file"; exit 1; }; \
+		grep -q 'B2_EXPORTER_PORT: "9944"' /tmp/b2e-from-file.yaml \
+			|| { echo "FAIL: service.port wrong from a values file"; exit 1; }; \
+		grep -q 'enableServiceLinks: false' /tmp/b2e-from-file.yaml \
+			|| { echo "FAIL: enableServiceLinks missing on the values-file path"; exit 1; }; \
+		grep -q 'checksum/config' /tmp/b2e-from-file.yaml \
+			|| { echo "FAIL: config checksum missing on the values-file path"; exit 1; }; \
+		grep -q 'automountServiceAccountToken: false' /tmp/b2e-from-file.yaml \
+			|| { echo "FAIL: automountServiceAccountToken missing on the values-file path"; exit 1; }; \
+		grep -q 'B2_EXPORTER_PREFIXES: "etcd/,postgres/"' /tmp/b2e-from-file.yaml \
+			|| { echo "FAIL: list-valued prefixes did not join correctly from a values file"; \
+			     grep PREFIXES /tmp/b2e-from-file.yaml; exit 1; }; \
 		echo "    all permutations rendered as expected"; \
 	fi
 
