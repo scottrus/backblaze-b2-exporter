@@ -1,0 +1,51 @@
+name: Bug report
+description: Something reports the wrong number, or does not run
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste an `applicationKey`. The key **id** is an identifier and
+        safe to share; the key itself is a credential.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations: { required: true }
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`backblaze-b2-exporter --version`, or the image tag."
+    validations: { required: true }
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: >
+        Prefixes, metric prefix, refresh interval, and how it is deployed
+        (Helm values, docker run, local). Redact the bucket name if you prefer.
+      render: yaml
+
+  - type: textarea
+    id: bucket-shape
+    attributes:
+      label: Bucket shape
+      description: >
+        This is usually the most useful field. Roughly how many objects and versions?
+        Any lifecycle rules (`daysFromUploadingToHiding` / `daysFromHidingToDeleting`)?
+        Object Lock? Do your workloads overwrite object names, or write unique ones?
+        Untested shapes are where the known gaps are — see the README.
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Relevant metrics or logs
+      description: >
+        `b2_collection_success`, `b2_last_collection_timestamp_seconds`, and the
+        `billed` vs `current` values for the affected prefix are the useful ones.
+      render: shell

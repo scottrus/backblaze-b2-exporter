@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a metric, a capability, or a change in behaviour
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: What you are trying to find out that the exporter cannot currently tell you.
+    validations: { required: true }
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: If it is a new metric, suggest a name, labels, and what it measures.
+
+  - type: checkboxes
+    id: surface
+    attributes:
+      label: Does this need new B2 permissions?
+      description: >
+        The exporter needs only `listBuckets,listFiles` today, and keeping it that way is
+        deliberate — see SECURITY.md.
+      options:
+        - label: This would need a capability beyond `listBuckets,listFiles`
+        - label: This would need a write, delete or hide operation
