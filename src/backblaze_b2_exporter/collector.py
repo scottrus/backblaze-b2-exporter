@@ -33,6 +33,10 @@ log = logging.getLogger(__name__)
 
 OTHER_PREFIX = "other"
 
+# Metric name prefix. Configurable only to avoid collisions between instances --
+# never to impersonate another exporter's metric names.
+DEFAULT_NAMESPACE = "b2"
+
 
 class ListingOrderError(RuntimeError):
     """B2 returned versions out of file-name order.
@@ -182,10 +186,28 @@ class B2Collector(Collector):
     exactly how recently.
     """
 
-    def __init__(self, bucket: str, quota_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        bucket: str,
+        quota_bytes: int | None = None,
+        namespace: str = DEFAULT_NAMESPACE,
+    ) -> None:
         self._snapshot = UsageSnapshot(bucket=bucket)
         self._quota_bytes = quota_bytes
         self._bucket = bucket
+        self._namespace = namespace.rstrip("_")
+
+    def _name(self, suffix: str) -> str:
+        """Prefix a metric name with the configured namespace.
+
+        Exists so two instances -- separate B2 accounts, or this alongside a fork --
+        can coexist in one TSDB without colliding. It does NOT provide s3_exporter
+        compatibility: see the migration table in README.md. Renaming a metric does
+        not change what it measures, and `s3_objects_size_sum_bytes` means current
+        objects while this exporter's headline number is billed bytes. Serving one
+        under the other's name would be the failure this project exists to fix.
+        """
+        return f"{self._namespace}_{suffix}"
 
     def update(self, snapshot: UsageSnapshot) -> None:
         self._snapshot = snapshot
@@ -199,23 +221,23 @@ class B2Collector(Collector):
         labels = ["bucket", "prefix"]
 
         yield GaugeMetricFamily(
-            "b2_collection_success",
+            self._name("collection_success"),
             "1 if the most recent collection attempt succeeded, 0 otherwise",
             value=1 if snap.success else 0,
         )
         yield GaugeMetricFamily(
-            "b2_last_collection_timestamp_seconds",
+            self._name("last_collection_timestamp_seconds"),
             "Unix time of the last SUCCESSFUL collection; 0 if none has ever succeeded",
             value=snap.collected_at,
         )
         yield GaugeMetricFamily(
-            "b2_collection_duration_seconds",
+            self._name("collection_duration_seconds"),
             "Wall-clock duration of the last successful collection",
             value=snap.duration_seconds,
         )
         if self._quota_bytes is not None:
             yield GaugeMetricFamily(
-                "b2_bucket_quota_bytes",
+                self._name("bucket_quota_bytes"),
                 "Configured capacity ceiling for this bucket. Alert on the RATIO to this, "
                 "never on a hardcoded byte count, so raising the tier is a one-number edit",
                 value=self._quota_bytes,
@@ -227,53 +249,53 @@ class B2Collector(Collector):
 
         families = [
             (
-                "b2_bucket_billed_bytes",
+                "bucket_billed_bytes",
                 "Bytes Backblaze bills for: all versions, including non-current and hidden",
                 "billed_bytes",
             ),
             (
-                "b2_bucket_current_bytes",
+                "bucket_current_bytes",
                 "Bytes a ListObjectsV2-based exporter would see. The "
                 "shortfall against billed_bytes is its blind spot",
                 "current_bytes",
             ),
             (
-                "b2_bucket_billed_objects",
+                "bucket_billed_objects",
                 "Count of upload records across all versions",
                 "billed_objects",
             ),
             (
-                "b2_bucket_current_objects",
+                "bucket_current_objects",
                 "Count of current, non-hidden objects",
                 "current_objects",
             ),
             (
-                "b2_bucket_hide_markers",
+                "bucket_hide_markers",
                 "Hide markers. Zero bytes each; they inflate object count but never storage cost",
                 "hide_markers",
             ),
             (
-                "b2_bucket_unfinished_large_files",
+                "bucket_unfinished_large_files",
                 "Unfinished multipart uploads. Their parts "
                 "are billed and no lifecycle rule cancels "
                 "them by default",
                 "unfinished_large_files",
             ),
             (
-                "b2_bucket_unknown_actions",
+                "bucket_unknown_actions",
                 "Version records with an action this exporter does "
                 "not model. Non-zero means B2 grew a new one",
                 "unknown_actions",
             ),
         ]
-        for name, doc, attr in families:
-            family = GaugeMetricFamily(name, doc, labels=labels)
+        for suffix, doc, attr in families:
+            family = GaugeMetricFamily(self._name(suffix), doc, labels=labels)
             for prefix, usage in snap.per_prefix.items():
                 family.add_metric([snap.bucket, prefix], getattr(usage, attr))
             yield family
 
         freshness = GaugeMetricFamily(
-            "b2_bucket_last_upload_timestamp_seconds",
+            self._name("bucket_last_upload_timestamp_seconds"),
             "Unix time of the newest upload under this prefix. Detects a sync that has "
             "silently stopped advancing",
             labels=labels,

@@ -163,3 +163,63 @@ def test_unknown_action_is_surfaced_not_swallowed():
     totals = aggregate(versions, [TALOS])
     assert totals[TALOS].unknown_actions == 1
     assert totals[TALOS].billed_bytes == 0
+
+
+def _names(collector) -> set[str]:
+    return {family.name for family in collector.collect()}
+
+
+def test_default_namespace_is_b2():
+    from backblaze_b2_exporter.collector import B2Collector, collect_snapshot
+
+    collector = B2Collector("example-backups", quota_bytes=10_737_418_240)
+    collector.update(collect_snapshot("example-backups", load_fixture(), [TALOS]))
+    names = _names(collector)
+    assert "b2_bucket_billed_bytes" in names
+    assert "b2_collection_success" in names
+
+
+def test_namespace_is_configurable_for_collision_avoidance():
+    """Two instances -- separate accounts, or this beside a fork -- in one TSDB."""
+    from backblaze_b2_exporter.collector import B2Collector, collect_snapshot
+
+    collector = B2Collector("example-backups", namespace="b2_archive")
+    collector.update(collect_snapshot("example-backups", load_fixture(), [TALOS]))
+    names = _names(collector)
+    assert "b2_archive_bucket_billed_bytes" in names
+    assert not any(n.startswith("b2_bucket_") for n in names)
+
+
+def test_namespace_never_impersonates_s3_exporter_semantics():
+    """Renaming does not change meaning. Even under an `s3` namespace the headline
+    metric is billed bytes, which is NOT what `s3_objects_size_sum_bytes` means --
+    so the stem stays distinct rather than colliding with someone else's contract."""
+    from backblaze_b2_exporter.collector import B2Collector, collect_snapshot
+
+    collector = B2Collector("example-backups", namespace="s3")
+    collector.update(collect_snapshot("example-backups", load_fixture(), [TALOS]))
+    names = _names(collector)
+    assert "s3_bucket_billed_bytes" in names
+    assert "s3_objects_size_sum_bytes" not in names
+    assert "s3_objects" not in names
+
+
+def test_cold_start_publishes_no_usage_gauges():
+    """Never collected: meta metrics only. A fabricated 0 would read as healthy."""
+    from backblaze_b2_exporter.collector import B2Collector
+
+    names = _names(B2Collector("example-backups"))
+    assert "b2_collection_success" in names
+    assert not any("bucket_billed" in n for n in names)
+
+
+def test_failure_after_success_retains_last_known_values():
+    """Warm failure keeps the numbers and drops success -- age carries the staleness."""
+    from backblaze_b2_exporter.collector import B2Collector, collect_snapshot
+
+    collector = B2Collector("example-backups")
+    collector.update(collect_snapshot("example-backups", load_fixture(), [TALOS]))
+    collector.mark_failure()
+    families = {f.name: f for f in collector.collect()}
+    assert families["b2_collection_success"].samples[0].value == 0
+    assert "b2_bucket_billed_bytes" in families  # values retained, not dropped

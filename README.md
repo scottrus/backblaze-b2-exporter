@@ -59,6 +59,49 @@ README.
 your capacity tier then becomes a one-number edit, instead of leaving rules quietly warning
 against a ceiling that no longer exists.
 
+### Metric naming, and why these are not `s3_*`
+
+**There is no standard to conform to here.** OpenTelemetry's semantic conventions do not
+cover object-storage bucket metrics, and Prometheus has no community spec for them.
+[`ribbybibby/s3_exporter`](https://github.com/ribbybibby/s3_exporter) is the closest thing to
+a de-facto convention, but its names are one project's choices rather than a contract.
+
+The convention that *does* exist — Prometheus base units and `_bytes` / `_seconds` suffixes —
+is followed here. Notably `s3_last_modified_object_date` does not follow it: no unit suffix,
+and "date" where it means seconds. Copying that set wholesale would import the flaw.
+
+More importantly, **only two of its metrics mean the same thing as anything here**:
+
+| `s3_exporter` | Equivalent here | Same thing? |
+|---|---|---|
+| `s3_objects_size_sum_bytes` | `b2_bucket_current_bytes` | yes |
+| `s3_objects` | `b2_bucket_current_objects` | yes |
+| `s3_last_modified_object_date` | `b2_bucket_last_upload_timestamp_seconds` | close — ours spans all versions, not just current |
+| `s3_list_success` | `b2_collection_success` | close — ours is per collection, not per prefix |
+| `s3_list_duration_seconds` | `b2_collection_duration_seconds` | close — same caveat |
+| `s3_biggest_object_size_bytes`, `s3_last_modified_object_size_bytes`, `s3_common_prefixes` | — | not computed |
+| — | `b2_bucket_billed_bytes` and everything version-aware | **no S3 equivalent exists** |
+
+**The headline metric has no counterpart at all**, which is the whole reason this exists.
+Serving billed bytes under `s3_objects_size_sum_bytes` would make every existing dashboard
+silently display a different quantity — the exact failure mode this project was built to
+fix, reintroduced at the naming layer. Partial compatibility is worse than none when it is
+silent.
+
+If you are migrating, rewrite the two exact matches and treat the rest as new.
+
+### `--metric-prefix`
+
+The default namespace is `b2`. It is configurable **solely to avoid collisions** — two
+accounts, two buckets scraped by separate instances, or this running alongside a fork:
+
+```bash
+backblaze-b2-exporter --metric-prefix b2_archive    # b2_archive_bucket_billed_bytes
+```
+
+Renaming does not change meaning. Setting it to `s3` yields `s3_bucket_billed_bytes`, never
+`s3_objects_size_sum_bytes`, and there is a test asserting exactly that.
+
 ## Design notes
 
 **Prefixes are configured, never discovered.** Deriving label values from object keys makes
@@ -93,12 +136,90 @@ is different — those bytes were true recently, and the age metric says exactly
 
 ## Credentials
 
-A read-only application key with `listFiles` (and `listBuckets`) on the target bucket is
-sufficient. Do not give this a write-capable key.
+The exporter needs **two capabilities and nothing else**: `listBuckets` to resolve the
+bucket name, and `listFiles` to enumerate versions. It never downloads object content, so
+**`readFiles` is not required** — a key for this exporter is strictly weaker than a restore
+key.
 
-To also report Object Lock state, the key additionally needs `readFileRetentions` /
-`readBucketRetentions`; without them B2 returns `"mode": "unknown"` rather than an error,
-which is a **permission gap and not evidence that Object Lock is off**.
+### Creating the key
+
+```bash
+b2 key create --bucket example-backups b2-exporter listBuckets,listFiles
+```
+
+Capabilities are **one comma-separated positional argument**, and `--bucket` takes the
+bucket **name**, not its ID.
+
+Verify what you actually got, since a key is easy to over-grant and hard to notice:
+
+```bash
+b2 key list --long | grep b2-exporter
+```
+
+> ⚠️ **Do not create this key in the Backblaze web UI.** Its "Write Only" preset silently
+> grants **`deleteFiles` *and* `bypassGovernance`** — the two capabilities that most defeat
+> the point of an append-only, Object-Locked backup bucket. However the preset is labelled,
+> a key minted through the UI is wrong for this purpose. Use the CLI (or the native
+> `b2_create_key` API) where you state capabilities explicitly.
+
+> ⚠️ **`b2 key create` prints the secret to stdout**, and it is the only time B2 will ever
+> return it. Treat that terminal as sensitive: `applicationKeyId` is an identifier and safe
+> to share, `applicationKey` is the credential and must not reach a transcript, a chat, a
+> ticket, or shell history.
+
+**`listAllBucketNames` will be rejected** when the key is bucket-scoped — it is
+account-scoped and the two are mutually exclusive. `listBuckets` is the bucket-scoped
+equivalent and is what you want.
+
+### Restricting to a path — and why you probably shouldn't
+
+`--name-prefix` scopes a key to keys beginning with a given string:
+
+```bash
+# Scoped to one path. Read the trade-off below before using this.
+b2 key create --bucket example-backups --name-prefix etcd/ b2-exporter-etcd listBuckets,listFiles
+```
+
+That works, and for a shared bucket where you genuinely must not see other tenants' keys it
+is the right call. But it costs you the two things this exporter is most useful for:
+
+- **The bucket total disappears.** You can no longer answer "how full is the bucket," only
+  "how big is this prefix" — and B2 bills, and enforces caps, per account.
+- **The `other` series goes blind.** Anything written outside your configured prefixes is
+  invisible, so a stray uploader or a misconfigured job stops being detectable.
+
+So the default recommendation is **bucket-scoped without `--name-prefix`**, and let the
+exporter's configured prefixes do the attribution. Reach for `--name-prefix` only when
+something other than this exporter requires the isolation.
+
+### Proving the key cannot write
+
+Worth doing once, because "read-only" is a property of the key and not of your intent:
+
+```bash
+echo test > /tmp/denytest && \
+  b2 file upload example-backups /tmp/denytest denytest.txt \
+  && echo "FAIL — key can write, do not use it" \
+  || echo "PASS — write refused"; rm -f /tmp/denytest
+```
+
+If that unexpectedly prints FAIL, delete `denytest.txt` from the bucket and mint a new key.
+
+### Optional: reporting Object Lock state
+
+To also report retention, the key additionally needs `readFileRetentions` and
+`readBucketRetentions`. Without them B2 returns `"mode": "unknown"` rather than an error —
+which is a **permission gap and not evidence that Object Lock is off**, a distinction that
+is very easy to misread as reassurance.
+
+### Key expiry
+
+`--duration SECONDS` creates an expiring key. That is good hygiene, with one caveat worth
+knowing up front: when it expires the exporter stops collecting, and because the last good
+snapshot is retained, the *usage* gauges keep reading plausibly. `b2_collection_success`
+drops to 0 and `b2_last_collection_timestamp_seconds` stops advancing — **alert on those,
+not on the usage metrics**, or an expired key looks exactly like a bucket that stopped
+growing.
 
 ## Status
 
