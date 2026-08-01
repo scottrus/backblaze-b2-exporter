@@ -1,0 +1,19 @@
+[
+  { "fileName": "probe.txt", "action": "hide",   "size": 0,       "uploadTimestamp": 1785533949636 },
+  { "fileName": "probe.txt", "action": "upload", "size": 32,      "uploadTimestamp": 1785533940010 },
+  { "fileName": "probe.txt", "action": "hide",   "size": 0,       "uploadTimestamp": 1785533189673 },
+  { "fileName": "probe.txt", "action": "upload", "size": 6,       "uploadTimestamp": 1785533067782 },
+
+  { "fileName": "talos-cluster-state/2026-07-31_231658/etcd-2026-07-31_231658.snapshot.info",   "action": "upload", "size": 214,     "uploadTimestamp": 1785541263354 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/etcd-2026-07-31_231658.snapshot.sha256", "action": "upload", "size": 98,      "uploadTimestamp": 1785541263311 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/etcd-2026-07-31_231658.snapshot.zst.age","action": "upload", "size": 8019799, "uploadTimestamp": 1785541263418 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/machineconfig-192.168.200.221.yaml.zst.age", "action": "upload", "size": 7189, "uploadTimestamp": 1785541263388 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/machineconfig-192.168.200.222.yaml.zst.age", "action": "upload", "size": 7189, "uploadTimestamp": 1785541263506 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/machineconfig-192.168.200.223.yaml.zst.age", "action": "upload", "size": 7189, "uploadTimestamp": 1785541263524 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/machineconfig-192.168.200.231.yaml.zst.age", "action": "upload", "size": 2268, "uploadTimestamp": 1785541263618 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/machineconfig-192.168.200.232.yaml.zst.age", "action": "upload", "size": 2268, "uploadTimestamp": 1785541263660 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/nodes.tsv",            "action": "upload", "size": 201,  "uploadTimestamp": 1785541263665 },
+  { "fileName": "talos-cluster-state/2026-07-31_231658/secrets.yaml.zst.age", "action": "upload", "size": 5830, "uploadTimestamp": 1785541263711 },
+
+  { "fileName": "talos-cluster-state/p2.txt", "action": "upload", "size": 13, "uploadTimestamp": 1785535461400 }
+]

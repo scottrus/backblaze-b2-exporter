@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "backblaze-b2-exporter"
+dynamic = ["version"]
+description = "Prometheus exporter for Backblaze B2 bucket usage as billed, including non-current versions and hidden files"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "Scott Russell" }]
+keywords = ["prometheus", "exporter", "backblaze", "b2", "s3", "monitoring", "backup"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Monitoring",
+]
+dependencies = [
+  "prometheus-client>=0.20,<1.0",
+  # The official Backblaze SDK, deliberately preferred over hand-rolled REST
+  # calls: version and hide-marker semantics are the entire point of this
+  # exporter, and they should come from Backblaze's own code rather than from
+  # someone's reading of the API docs.
+  #
+  # The distribution is `b2sdk`; `b2-sdk-python` is the GitHub repository name and
+  # does not exist on PyPI. Verified 2026-08-01 against 2.12.0 (Python 3.10-3.14).
+  "b2sdk>=2.0,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+backblaze-b2-exporter = "backblaze_b2_exporter.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/scottrus/backblaze-b2-exporter"
+Issues = "https://github.com/scottrus/backblaze-b2-exporter/issues"
+
+[tool.hatch.version]
+path = "src/backblaze_b2_exporter/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/backblaze_b2_exporter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
