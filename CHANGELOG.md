@@ -15,6 +15,30 @@ this project intends to take.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-01
+
+### Changed
+
+- **A CPU limit is now set (`500m`).** The usual argument against one is CFS throttling
+  adding latency to something a user waits on — nothing waits on this. It sleeps for the
+  whole refresh interval, then does one short burst (0.89s over 233 versions, measured on a
+  live bucket). What the limit actually buys is bounding a runaway: this runs in a shared
+  namespace, and an infinite loop with no limit pegs a core for the neighbours.
+
+### Added
+
+- **A 16Mi tmpfs at `/tmp`**, because `readOnlyRootFilesystem` is `true`. Nothing writes to
+  disk today — `client.py` uses `InMemoryAccountInfo` specifically to avoid b2sdk's on-disk
+  account cache — but a dependency or a future change can want a temp path, and the failure
+  mode is a CrashLoop rather than a warning.
+
+- **The smoke test now runs the image with `--read-only`**, so that setting is proven rather
+  than assumed. It previously ran with a writable rootfs while the chart deployed a read-only
+  one, meaning the deployed configuration was the untested one.
+
+  It also confirms the image starts read-only *without* `/tmp`, so the tmpfs is defensive
+  rather than load-bearing today. That is recorded because it will stop being true silently.
+
 ## [0.1.2] - 2026-08-01
 
 ### Fixed
