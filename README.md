@@ -275,16 +275,30 @@ something other than this exporter requires the isolation.
 
 ### Proving the key cannot write
 
-Worth doing once, because "read-only" is a property of the key and not of your intent:
+"Read-only" is a property of the key, not of your intent, so it is worth checking once.
+
+**Check the capabilities, do not attempt a write.** `b2 key list --long` shows each key's
+bucket restriction and its full capability list, which is a direct assertion with no side
+effects:
 
 ```bash
-echo test > /tmp/denytest && \
-  b2 file upload example-backups /tmp/denytest denytest.txt \
-  && echo "FAIL — key can write, do not use it" \
-  || echo "PASS — write refused"; rm -f /tmp/denytest
+b2 key list --long | grep b2-exporter
 ```
 
-If that unexpectedly prints FAIL, delete `denytest.txt` from the bucket and mint a new key.
+You want exactly `listBuckets,listFiles` and the bucket name — nothing else, and in
+particular never `deleteFiles` or `bypassGovernance`.
+
+> ⚠️ **Do not "prove" it by trying to upload a file, if the bucket has Object Lock.**
+>
+> The obvious test — attempt a write, expect a refusal — has an asymmetric cost. If the key
+> turns out to be over-granted, the write **succeeds**, and on a bucket with Object Lock in
+> Compliance mode that test file **cannot then be deleted by anyone, including the account
+> root, until its retention expires.** You would be stuck with it for the full retention
+> window, and it would count toward billed storage and pollute per-prefix attribution the
+> whole time.
+>
+> So the test only leaves residue in exactly the case where it tells you something — which
+> is the worst possible trade. Read the capabilities instead.
 
 ### Optional: reporting Object Lock state
 
