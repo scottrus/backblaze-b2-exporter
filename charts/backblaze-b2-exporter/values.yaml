@@ -51,6 +51,10 @@ serviceAccount:
   create: true
   name: ""
   annotations: {}
+  # -- The exporter talks only to Backblaze and never calls the Kubernetes API, so it
+  # has no use for a projected token. Default false: a credential the workload cannot
+  # use is only ever an asset to an attacker who lands in the pod.
+  automountServiceAccountToken: false
 
 serviceMonitor:
   enabled: false
