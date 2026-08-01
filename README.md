@@ -9,6 +9,28 @@ and upload freshness.
 Generic S3 exporters build on `ListObjectsV2`, which returns **current objects only**: no
 non-current versions, no hidden files. **Backblaze bills for all of them.**
 
+That last sentence is the entire premise, so here is the receipt. From Backblaze's own
+[lifecycle rules documentation](https://www.backblaze.com/docs/cloud-storage-lifecycle-rules):
+
+> The hidden files are still available for download using their specific `file_id` and
+> **continue to count as part of your Backblaze B2 storage amount.**
+
+> **Until they are deleted**, the files are still available for download and count as part of
+> your Backblaze B2 storage amount.
+
+The API's own shape corroborates it: a lifecycle rule has *two* steps,
+`daysFromUploadingToHiding` and `daysFromHidingToDeleting`. If hiding stopped the charges, a
+separate delete step would be pointless. **Hiding makes a file invisible; deleting is what
+frees storage.**
+
+A file name can therefore have versions in three states, and a listing shows you one of them:
+
+| State | In `ListObjectsV2` / `b2 ls` | Stored and billed |
+|---|---|---|
+| current — newest upload | yes | yes |
+| non-current — superseded by a newer upload | **no** | yes |
+| hidden — a hide marker sits on top | **no** | **yes, until deleted** |
+
 On any bucket with a lifecycle rule the gap is structural and permanent. Given a typical
 retention setup:
 
