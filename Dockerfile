@@ -9,7 +9,7 @@
 
 # --- build ------------------------------------------------------------------
 # The -dev variant carries pip and a shell; the runtime variant carries neither.
-FROM cgr.dev/chainguard/python:latest-dev@sha256:d7a9ff52942e89e188372fce9049640087f48473ceeb8cee2495f8136620fc3c AS build
+FROM cgr.dev/chainguard/python:latest-dev@sha256:30cd0d997b48b7bc5c1c0cb2d88a4cd00e35d68c2babd783a08f2c896628223d AS build
 
 # Chainguard's -dev variants still default to the nonroot user, so writing to /
 # is denied. Switch to root for the build only — this stage is discarded, and the
@@ -38,7 +38,7 @@ RUN pip install --no-cache-dir .
 USER nonroot
 
 # --- runtime ----------------------------------------------------------------
-FROM cgr.dev/chainguard/python:latest@sha256:ee37f5e4fb445732409626797dccb6f2a6337872def2bab48729ee61b335fa77
+FROM cgr.dev/chainguard/python:latest@sha256:8e3a8e17c9ab20b463f76f62ace70fe55d9b10217b943b26f5b46422ab4936b6
 
 LABEL org.opencontainers.image.title="backblaze-b2-exporter" \
       org.opencontainers.image.description="Prometheus exporter for Backblaze B2 bucket usage as billed, including non-current versions and hidden files" \
