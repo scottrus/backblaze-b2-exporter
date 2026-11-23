@@ -329,7 +329,7 @@ growing.
 
 **Alpha, released, and running in one homelab.** The collector, CLI, background refresh loop, HTTP
 server, container image and Helm chart are all implemented, and the full gate — lint,
-tests on 3.11/3.13/3.14, workflow lint, `helm lint` with template permutations and
+tests on 3.11/3.13/3.14/3.15, workflow lint, `helm lint` with template permutations and
 kubeconform, hadolint, image build and smoke test, and a CVE scan — passes on every push.
 
 ```bash
